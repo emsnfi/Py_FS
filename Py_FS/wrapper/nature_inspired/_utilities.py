@@ -1,9 +1,14 @@
 import numpy as np
 from sklearn.neighbors import KNeighborsClassifier as KNN
 import matplotlib.pyplot as plt
+from sklearn import svm
+from sklearn.metrics import accuracy_score
+from sklearn.metrics import roc_auc_score
+from sklearn import preprocessing
 
-class Solution():    
-    #structure of the solution 
+
+class Solution():
+    # structure of the solution
     def __init__(self):
         self.num_features = None
         self.num_agents = None
@@ -28,12 +33,10 @@ class Data():
         self.val_Y = None
 
 
-
 def initialize(num_agents, num_features):
-    # define min and max number of features
-    min_features = int(0.3 * num_features)
-    max_features = int(0.6 * num_features)
-
+    # define min and max number of features  #Jake modify 1109 原先最大0.6最小0.3
+    max_features = int(0.8 * num_features)
+    min_features = int(0.3 * num_features)  # max_features - 1  #  avoid 沒有顯著差異
     # initialize the agents with zeros
     agents = np.zeros((num_agents, num_features))
 
@@ -46,22 +49,22 @@ def initialize(num_agents, num_features):
         temp_idx = np.argsort(temp_vec)[0][0:cur_count]
 
         # select the features with the ranom indices
-        agents[agent_no][temp_idx] = 1   
+        agents[agent_no][temp_idx] = 1
 
     return agents
-
 
 
 def sort_agents(agents, obj, data, fitness=None):
     # sort the agents according to fitness
     train_X, val_X, train_Y, val_Y = data.train_X, data.val_X, data.train_Y, data.val_Y
     (obj_function, weight_acc) = obj
-   
+
     if fitness is None:
         # if there is only one agent
         if len(agents.shape) == 1:
             num_agents = 1
-            fitness = obj_function(agents, train_X, val_X, train_Y, val_Y, weight_acc)
+            fitness = obj_function(
+                agents, train_X, val_X, train_Y, val_Y, weight_acc)
             return agents, fitness
 
         # for multiple agents
@@ -69,7 +72,8 @@ def sort_agents(agents, obj, data, fitness=None):
             num_agents = agents.shape[0]
             fitness = np.zeros(num_agents)
             for id, agent in enumerate(agents):
-                fitness[id] = obj_function(agent, train_X, val_X, train_Y, val_Y, weight_acc)
+                fitness[id] = obj_function(
+                    agent, train_X, val_X, train_Y, val_Y, weight_acc)
 
     idx = np.argsort(-fitness)
     sorted_agents = agents[idx].copy()
@@ -78,39 +82,54 @@ def sort_agents(agents, obj, data, fitness=None):
     return sorted_agents, sorted_fitness
 
 
-
-def display(agents, fitness, agent_name='Agent'):
+def display(dataframe, agents, fitness, agent_name='Agent'):
     # display the population
     print('\nNumber of agents: {}'.format(agents.shape[0]))
     print('\n------------- Best Agent ---------------')
     print('Fitness: {}'.format(fitness[0]))
+    print(agents[0])
+    # Jake add 1109
+    print([column[0]
+          for column in zip(dataframe.columns, agents[0]) if column[1]])
+    col = [column[0] for column in zip(
+        dataframe.columns, agents[0]) if column[1]]  # Jake add 1109
     print('Number of Features: {}'.format(int(np.sum(agents[0]))))
     print('----------------------------------------\n')
 
     for id, agent in enumerate(agents):
-        print('{} {} - Fitness: {}, Number of Features: {}'.format(agent_name, id+1, fitness[id], int(np.sum(agent))))
+        print('{} {} - Fitness: {}, Number of Features: {}'.format(agent_name,
+              id+1, fitness[id], int(np.sum(agent))))
 
     print('================================================================================\n')
+    return(col)
 
 
-
-def compute_accuracy(agent, train_X, test_X, train_Y, test_Y): 
+def compute_accuracy(agent, train_X, test_X, train_Y, test_Y):
     # compute classification accuracy of the given agents
-    cols = np.flatnonzero(agent)     
+    cols = np.flatnonzero(agent)
     if(cols.shape[0] == 0):
-        return 0    
-    clf = KNN()
+        return 0
+    clf = svm.SVC(kernel='linear', decision_function_shape='ovr')
 
-    train_data = train_X[:,cols]
+    train_data = train_X[:, cols]
     train_label = train_Y
-    test_data = test_X[:,cols]
+    test_data = test_X[:, cols]
     test_label = test_Y
 
-    clf.fit(train_data,train_label)
-    acc = clf.score(test_data,test_label)
+    clf.fit(train_data, train_label)
+    acc = clf.score(test_data, test_label)
 
+    test_predict = clf.predict(test_data)
+    acc2 = accuracy_score(test_label, test_predict)
+
+    # 多分類
+    roc = multiclass_roc_auc_score(test_label, test_predict, average='macro')
+
+    print("acc=", acc)
+    print("accuracy score=", acc2)
+    print("roc=", roc)
     return acc
-        
+
 
 def compute_fitness(agent, train_X, test_X, train_Y, test_Y, weight_acc=0.9):
     # compute a basic fitness measure
@@ -119,7 +138,7 @@ def compute_fitness(agent, train_X, test_X, train_Y, test_Y, weight_acc=0.9):
 
     weight_feat = 1 - weight_acc
     num_features = agent.shape[0]
-    
+
     acc = compute_accuracy(agent, train_X, test_X, train_Y, test_Y)
     feat = (num_features - np.sum(agent))/num_features
 
@@ -132,12 +151,19 @@ def Conv_plot(convergence_curve):
     num_iter = len(convergence_curve['fitness'])
     iters = np.arange(num_iter) + 1
     fig, axes = plt.subplots(1)
-    fig.tight_layout(pad = 5) 
+    fig.tight_layout(pad=5)
     fig.suptitle('Convergence Curves')
-    
+
     axes.set_title('Convergence of Fitness over Iterations')
     axes.set_xlabel('Iteration')
     axes.set_ylabel('Avg. Fitness')
     axes.plot(iters, convergence_curve['fitness'])
 
     return fig, axes
+
+
+def multiclass_roc_auc_score(y_test, y_pred, average="macro"):
+    lb = preprocessing.LabelBinarizer().fit(y_test)
+    y_test = lb.transform(y_test)
+    y_pred = lb.transform(y_pred)
+    return roc_auc_score(y_test, y_pred, average=average)
